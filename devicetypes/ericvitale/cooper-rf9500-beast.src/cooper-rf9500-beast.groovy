@@ -9,7 +9,7 @@
  *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
- * 
+ *
  *  This device handler was written specifically for the Cooper RF9500 (RF Battery Operated Switch).
  *  The version # of the switches I tested with is 3.11 as listed on th back of the switch.
  *  FCC ID: UH2-RF9500
@@ -29,7 +29,20 @@ metadata {
 	}
 
 	preferences {
-		input "constrain", "bool", title: "Enforce Dimmer Constraints?", description: "Yes if you want your dimmer to stay between 0 & 100, No if you don't. Selecting No removes the requirement to sync your dimmers.", required: true, defaultValue: true
+		input "constrain",
+			"bool",
+			title: "Enforce Dimmer Constraints?",
+			description: "Yes if you want your dimmer to stay between 1 & 100, No if you don't. Selecting No removes the requirement to sync your dimmers.",
+			required: true,
+			defaultValue: true
+
+		input "dimmerLevels",
+			"number",
+			title: "Number of steps for dimmer",
+			description: "Set number of steps for dimmer",
+			range: "1..100",
+			displayDuringSetup: true,
+			defaultValue: 10
 	}
 
 	tiles {
@@ -61,13 +74,20 @@ def parse(String description) {
 	def ignore = false
 	def onOffChange = false
 
+	def dimmerStep = (100.0 / dimmerLevels)
+	//log.debug "Dimmer Step is ${dimmerStep}"
+
 	try {
 		if(state.level == null) {
 			state.level = 100
 		}
+		if(state.levelStep == null) {
+			state.levelStep = dimmerLevels
+		}
 	} catch(e) {
 		log.debug "Failed to get the current dim level."
 		state.level = 100
+		state.levelStep = dimmerLevels
 	}
 
 	log.debug "description === ${description}"
@@ -100,8 +120,16 @@ def parse(String description) {
 		log.debug "CRF9500 -- parse -- Dim Level Raised."
 
 		try {
-			if(state.level <= 90 || ! constrain) {
-				state.level = state.level + 10
+			state.levelStep = state.levelStep + 1
+			if (constrain && state.levelStep > dimmerLevels) {
+				state.levelStep = dimmerLevels
+			}
+			state.level = Math.round(state.levelStep * dimmerStep)
+			log.debug "CRF9500 -- parse -- Level change to step ${state.levelStep} - ${state.level}"
+
+			if(constrain && state.level > 100) {
+				log.debug "CRF9500 -- parse -- Upper constraint exceeded, limiting to 100."
+				state.level = 100
 			}
 		} catch(e) {
 			log.debug "CRF9500 -- parse -- Exception = ${e}"
@@ -121,8 +149,16 @@ def parse(String description) {
 		log.debug "CRF9500 -- parse -- device.currentValue(level) = ${state.level}."
 
 		try {
-			if(state.level >= 10 || ! constrain) {
-				state.level = state.level - 10
+			state.levelStep = state.levelStep - 1
+			if (constrain && state.levelStep < 0) {
+				state.levelStep = 0
+			}
+			state.level = Math.round(state.levelStep * dimmerStep)
+			log.debug "CRF9500 -- parse -- Level change to step ${state.levelStep} - ${state.level}"
+
+			if (constrain && state.level < 1) {
+				log.debug "CRF9500 -- parse -- Lower constraint exceeded, limiting to 1."
+				state.level = 1
 			}
 		} catch(e) {
 			log.debug "CRF9500 -- parse -- Exception = ${e}"
